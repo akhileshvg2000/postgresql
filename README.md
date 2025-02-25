@@ -374,17 +374,19 @@ WINDOW
 w1 AS(partition by customer_id order by sale_date);
 ```
 
-[!NOTE]: 
-Difference between Nesting & Chaining.
+> [!NOTE]
 
-* Nesting
+> Difference between Nesting & Chaining.
+
+_Nesting_
+
 One window function is used as an argument inside another window function.
 
 `LAG(SUM(...)) OVER (...)`
 
 use a CTE (WITH clause) or a subquery to compute intermediate values.
 
-* Chaining
+_Chaining_
 
 Multiple window functions are applied separately in the same query.
 
