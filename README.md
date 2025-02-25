@@ -375,7 +375,6 @@ w1 AS(partition by customer_id order by sale_date);
 ```
 
 > [!NOTE]
-
 > Difference between Nesting & Chaining.
 
 _Nesting_
