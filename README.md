@@ -61,13 +61,346 @@ FROM Sales;
 ```
 2. Set 2: Intermediate
 
-  1. Assign a rank to each sale within its region based on the price in descending order. If two sales have the same price, they should have the same rank.
+    1. Assign a rank to each sale within its region based on the price in descending order. If two sales have the same price, they should have the same rank.
+    2. Find the difference in price between each sale and the previous sale (based on sale_date) using a window function.
+    3. Calculate the cumulative revenue for each customer ordered by sale_date.
+
+>[!NOTE] 
+
+> cumulative value or sum, avg..
+
+***SUM(col)*** over partition by gives total sum of the specified column. But if we specified order by column, it calculates sum for current row and unbounded preceeding.
+
+This behavior is also applicable to functions like avg, max, min..etc
+
+Here if we provided order by, then rows with same value of column in order by will given same sum.
+
+    4. Find the second most expensive product sold in each region using a window function.
+
+***DENSE_RANK()*** will be useful than RANK in situtations where we dont want gap in between ranks. Such that we want records with rank 2. If we used RANK() function there will be gap.
+
+    5. Find the average sale price of the last 3 sales (rolling average) for each sale based on sale_date.
+
+> Rolling avg, sum..
+
+Here for each row, the frame we specified is 2 rows above. So for subsequent rows the frame also will move, and the avg or the curresponding function will be calculated for this moving frame. 
+
+Answers
+```sql
+-- 1. Assign a rank to each sale within its region based on price
+SELECT sale_id, customer_id, region, price,
+       RANK() OVER (PARTITION BY region ORDER BY price DESC) AS region_price_rank
+FROM Sales;
+
+-- 2. Find the difference in price between each sale and the previous sale
+SELECT sale_id, customer_id, product, price, sale_date,
+       price - LAG(price) OVER (ORDER BY sale_date) AS price_difference
+FROM Sales;
+
+-- 3. Calculate the cumulative revenue for each customer ordered by sale_date
+SELECT sale_id, customer_id, product, price, sale_date,
+       SUM(price * quantity) OVER (PARTITION BY customer_id ORDER BY sale_date) AS cumulative_revenue
+FROM Sales;
+
+-- 4. Find the second most expensive product sold in each region
+SELECT sale_id, customer_id, region, product, price
+FROM (
+    SELECT sale_id, customer_id, region, product, price,
+           DENSE_RANK() OVER (PARTITION BY region ORDER BY price DESC) AS rank_in_region
+    FROM Sales
+) ranked_sales
+WHERE rank_in_region = 2;
+
+-- 5. Find the average sale price of the last 3 sales (rolling average)
+SELECT sale_id, customer_id, product, price, sale_date,
+       AVG(price) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_avg_price
+FROM Sales;
+```
+
+3. Set 3: Advanced
+    1. Find the percentage of total sales revenue each sale contributes for its respective region.
+    2. Identify the first and last sale date for each customer using a window function.
+***FIRST_VALUE(col) & LAST_VALUE(col)***
+
+Partition can be defined, order can be imposed. Default frame is current row and unbounded preceeding.
+So for last_value frame should be defined. Any col from the first and last row can be taken.
+
+The above problem can be solved using max(sale_date) and min(sale_date).
+
+    3. Find the difference in revenue between the current sale and the next sale made by the same customer.
+
+***LEAD(col) & LAG(col)***: These function can be used with dervived column value like `LEAD(col1*col2)`
+
+    4. For each sale, determine the number of days since the previous sale by the same customer.
+    5. Determine the top 3 highest revenue-generating customers using a window function.
+
+> Window function directly to the derived column, `dense_ranke() over(order by price*quantity)`
+
+Answers
+```sql
+-- 1. Find the percentage of total sales revenue each sale contributes for its region
+SELECT sale_id, customer_id, region, price * quantity AS sale_revenue,
+       SUM(price * quantity) OVER (PARTITION BY region) AS total_region_revenue,
+       (price * quantity) * 100.0 / SUM(price * quantity) OVER (PARTITION BY region) AS revenue_percentage
+FROM Sales;
+
+-- 2. Identify the first and last sale date for each customer
+SELECT sale_id, customer_id, sale_date,
+       FIRST_VALUE(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date) AS first_sale_date,
+       LAST_VALUE(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_sale_date
+FROM Sales;
+
+-- 3. Find the difference in revenue between the current sale and the next sale made by the same customer
+SELECT sale_id, customer_id, sale_date, price * quantity AS revenue,
+       (LEAD(price * quantity) OVER (PARTITION BY customer_id ORDER BY sale_date)) - (price * quantity) AS revenue_difference
+FROM Sales;
+
+-- 4. For each sale, determine the number of days since the previous sale by the same customer
+SELECT sale_id, customer_id, sale_date,
+       sale_date - LAG(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date) AS days_since_last_sale
+FROM Sales;
+
+-- 5. Determine the top 3 highest revenue-generating customers using a window function
+SELECT customer_id, total_revenue
+FROM (
+    SELECT customer_id, SUM(price * quantity) AS total_revenue,
+           RANK() OVER (ORDER BY SUM(price * quantity) DESC) AS revenue_rank
+    FROM Sales
+    GROUP BY customer_id
+) ranked_customers
+WHERE revenue_rank <= 3;
+```
+
+3. Set 3: Advanced
+
+    1. Calculate the percentile rank of each sale’s price within its region. (Percentile rank = (RANK - 1) / (Total rows - 1))
+
+    2. Find the first and last sale date for each customer using a window function.
+
+    3. Calculate the running 7-day total sales revenue for each sale. (Sum the revenue of sales in the 7-day window ending at each sale’s date.)
+
+    4. Find customers who made consecutive purchases within 3 days of their previous sale.(Compare sale_date with the previous sale’s sale_date for each customer.)
+
+    5. Calculate the difference in quantity sold between the current sale and the next sale for each product.
+
+Answers
+
+```sql
+-- 1. Calculate the percentile rank of each sale’s price within its region
+SELECT sale_id, customer_id, region, price,
+       (RANK() OVER (PARTITION BY region ORDER BY price) - 1) * 1.0 /
+       NULLIF((COUNT(*) OVER (PARTITION BY region) - 1),0) AS percentile_rank
+FROM Sales;
+-- Alternative
+SELECT sale_id, customer_id, region, price,
+       PERCENT_RANK() OVER(partition by region order by price desc) AS percentile_rank
+FROM Sales;
+
+-- 2. Find the first and last sale date for each customer
+SELECT sale_id, customer_id, product, sale_date,
+       FIRST_VALUE(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date) AS first_sale,
+       LAST_VALUE(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date 
+           ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_sale
+FROM Sales;
+
+-- 3. Calculate the running 7-day total sales revenue for each sale
+SELECT sale_id, customer_id, product, price, sale_date,
+       SUM(price * quantity) OVER (
+           PARTITION BY customer_id 
+           ORDER BY sale_date 
+           RANGE BETWEEN INTERVAL '6' DAY PRECEDING AND CURRENT ROW
+       ) AS rolling_7day_revenue
+FROM Sales;
+
+-- 4. Find customers who made consecutive purchases within 3 days
+SELECT sale_id, customer_id, product, sale_date,
+       LAG(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date) AS prev_sale_date,
+       CASE 
+           WHEN sale_date - LAG(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date) <= INTERVAL '3' DAY 
+           THEN 'Consecutive Purchase' 
+           ELSE 'No' 
+       END AS purchase_trend
+FROM Sales;
+
+-- 5. Calculate the difference in quantity sold between the current sale and the next sale for each product
+SELECT sale_id, customer_id, product, quantity,
+       LEAD(quantity) OVER (PARTITION BY product ORDER BY sale_date) - quantity AS quantity_difference
+FROM Sales;
+```
+4. Set 4: Experts
+
+Identify the top 3 customers in each region based on total spending.
+(Total spending = SUM(price * quantity), ranked per region.)
+
+For each sale, find the percentage contribution of that sale to the total revenue in its region.
+
+Find the moving average of revenue for the last 5 sales per customer, excluding the current sale.
+
+Detect gaps in sales dates for each customer and find the number of days since their last purchase.
+
+For each customer, calculate the cumulative percentage of total revenue they have contributed over time.
+
+
+Answer
+
+```sql
+-- 1. Identify the top 3 customers in each region based on total spending
+SELECT customer_id, region, total_spending
+FROM (
+    SELECT customer_id, region, SUM(price * quantity) AS total_spending,
+           RANK() OVER (PARTITION BY region ORDER BY SUM(price * quantity) DESC) AS spending_rank
+    FROM Sales
+    GROUP BY customer_id, region
+) ranked_customers
+WHERE spending_rank <= 3;
+
+-- 2. Find the percentage contribution of each sale to the total revenue in its region
+SELECT sale_id, customer_id, region, price * quantity AS sale_revenue,
+       (price * quantity) * 100.0 / SUM(price * quantity) OVER (PARTITION BY region) AS percentage_contribution
+FROM Sales;
+
+-- 3. Find the moving average of revenue for the last 5 sales per customer, excluding the current sale
+SELECT sale_id, customer_id, price * quantity AS revenue, sale_date,
+       AVG(price * quantity) OVER (
+           PARTITION BY customer_id 
+           ORDER BY sale_date 
+           ROWS BETWEEN 5 PRECEDING AND 1 PRECEDING
+       ) AS moving_avg_revenue
+FROM Sales;
+
+-- 4. Detect gaps in sales dates for each customer and find the number of days since their last purchase
+SELECT sale_id, customer_id, sale_date,
+       sale_date - LAG(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date) AS days_since_last_sale
+FROM Sales;
+
+-- 5. Calculate the cumulative percentage of total revenue each customer has contributed over time
+SELECT sale_id, customer_id, sale_date, price * quantity AS revenue,
+       SUM(price * quantity) OVER (PARTITION BY customer_id ORDER BY sale_date) AS cumulative_revenue,
+       SUM(price * quantity) OVER (PARTITION BY customer_id ORDER BY sale_date) * 100.0 /
+       SUM(price * quantity) OVER (PARTITION BY customer_id) AS cumulative_percentage
+FROM Sales;
+```
+
+4. Set 5: 
+
+    1. Find the top 3 most valuable customers in each region, but only if they have made at least 5 purchases.
+       (Total value = SUM(price * quantity), ranked per region, with a minimum purchase constraint.)
+
+    2. For each sale, find the number of previous sales where the price was higher than the current sale’s price within the same region.
+       (This simulates a "lower than previous sales" counter per region.)
+
+    3. Identify customers whose spending pattern has increased or decreased compared to their previous 3 purchases.
+       (Use a rolling sum of price * quantity over the last 3 purchases to detect an increasing or decreasing trend.)
+
+    4. Find the longest gap (in days) between two consecutive purchases for each customer.
+       (Find the max difference in sale_date between any two consecutive purchases.)
+
+    5. Calculate a weighted moving average of revenue, giving more weight to recent sales.
+       (Apply a decreasing weight factor: 0.5 for the most recent, 0.3 for the second most recent, and 0.2 for the third.)
+
+Answer
+
+```sql
+-- 1. Find the top 3 most valuable customers in each region, but only if they have made at least 5 purchases
+SELECT customer_id, region, total_spending, purchase_count
+FROM (
+    SELECT customer_id, region, SUM(price * quantity) AS total_spending,
+           COUNT(sale_id) AS purchase_count,
+           RANK() OVER (PARTITION BY region ORDER BY SUM(price * quantity) DESC) AS spending_rank
+    FROM Sales
+    GROUP BY customer_id, region
+) ranked_customers
+WHERE spending_rank <= 3 AND purchase_count >= 5;
+
+-- 2. For each sale, find the number of previous sales where the price was higher than the current sale’s price within the same region
+SELECT sale_id, customer_id, region, price,
+       COUNT(*) OVER (
+           PARTITION BY region 
+           ORDER BY sale_date 
+           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+       ) AS lower_price_count
+FROM Sales;
+
+-- 3. Identify customers whose spending pattern has increased or decreased compared to their previous 3 purchases
+SELECT sale_id, customer_id, sale_date, price * quantity AS revenue,
+       SUM(price * quantity) OVER (PARTITION BY customer_id ORDER BY sale_date ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING) AS prev_3_sales_revenue,
+       CASE 
+           WHEN price * quantity > SUM(price * quantity) OVER (PARTITION BY customer_id ORDER BY sale_date ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING)
+           THEN 'Increasing'
+           WHEN price * quantity < SUM(price * quantity) OVER (PARTITION BY customer_id ORDER BY sale_date ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING)
+           THEN 'Decreasing'
+           ELSE 'Stable'
+       END AS spending_trend
+FROM Sales;
+
+-- 4. Find the longest gap (in days) between two consecutive purchases for each customer
+SELECT customer_id,
+       MAX(sale_date - LAG(sale_date) OVER (PARTITION BY customer_id ORDER BY sale_date)) AS longest_gap
+FROM Sales
+GROUP BY customer_id;
+
+-- 5. Calculate a weighted moving average of revenue, giving more weight to recent sales (0.5, 0.3, 0.2)
+SELECT sale_id, customer_id, sale_date, price * quantity AS revenue,
+       0.5 * price * quantity +
+       0.3 * LAG(price * quantity, 1) OVER (PARTITION BY customer_id ORDER BY sale_date) +
+       0.2 * LAG(price * quantity, 2) OVER (PARTITION BY customer_id ORDER BY sale_date) AS weighted_moving_avg
+FROM Sales;
+```
+
+First
+```sql
+select * from (select sale_id, customer_id, quantity, price, sale_date, region, DENSE_RANK() OVER(partition by region order by tota_regional_revenue, customer_id) as rank from (select sale_id, customer_id, quantity, price, sale_date, region, SUM(price*quantity) OVER(partition by region, customer_id) as tota_regional_revenue from  (select sale_id, customer_id, quantity, price, sale_date, region from (select *, COUNT(*) OVER(partition by region, customer_id) as count from sales) as counted_sales where counted_sales.count >=5) as saless) as ranked_sales) as final_sales where final_sales.rank <=3;
+```
+
+> Nesting Window Functions
+
+It is not allowed in PostgreSQL
+
+Third qusetion
+
+We need to create subqueries to achieve the result.
+
+```sql
+select *, CASE WHEN((LAG(past_three_day_rev) OVER(w1) - past_three_day_rev) < 0) THEN 1 ELSE 0 END AS progress from (select  sale_id, customer_id, region, sale_date, price, quantity, SUM(price*quantity) OVER (partition by customer_id order by sale_date rows between 2 preceding and current row) as past_three_day_rev from sales) as s
+WINDOW
+w1 AS(partition by customer_id order by sale_date),
+w2 AS(partition by customer_id order by sale_date rows between 2 preceding and current row);
+```
+Below query will fail.
+
+```sql
+select *, CASE WHEN((LAG(SUM(price*quantity) OVER (partition by customer_id order by sale_date rows between 2 preceding and current row)) OVER(w1) - SUM(price*quantity) OVER (partition by customer_id order by sale_date rows between 2 preceding and current row)) < 0) THEN 1 ELSE 0 END AS progress from sales
+WINDOW
+w1 AS(partition by customer_id order by sale_date);
+```
+
+[!NOTE]: 
+Difference between Nesting & Chaining.
+
+* Nesting
+One window function is used as an argument inside another window function.
+
+`LAG(SUM(...)) OVER (...)`
+
+use a CTE (WITH clause) or a subquery to compute intermediate values.
+
+* Chaining
+
+Multiple window functions are applied separately in the same query.
+
+SUM(...) OVER (...) and LAG(...) OVER (...) used independently.
+
+Each window function is executed separately on the same result set.
 
 
 
 
 
+### DATA TYPES
 
+1. DATE
+
+    * date_1 - date_2 is a numeric number which represent the total days in between.
 
 
 
