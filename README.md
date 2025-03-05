@@ -447,7 +447,7 @@ w2 AS ();
 
 [sql code run](https://www.db-fiddle.com/f/2rM8RAnq7h5LLDTzZiRWcd/138)
 
-[ERD](./documentation/dannys_diner_erd.png)
+![ERD](./documentation/dannys_diner_erd.png)
 
 Case Study Questions
 
@@ -559,7 +559,7 @@ Use -w flag to stop prompt for password.
 
 
 
-###Knowlede
+### Knowlede
 
 [Entity Relationship Diagram](dbdiagram.io)
 [DB Fiddle](https://www.db-fiddle.com/f/2rM8RAnq7h5LLDTzZiRWcd/138)
