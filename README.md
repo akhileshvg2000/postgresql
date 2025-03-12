@@ -65,7 +65,7 @@ FROM Sales;
     2. Find the difference in price between each sale and the previous sale (based on sale_date) using a window function.
     3. Calculate the cumulative revenue for each customer ordered by sale_date.
 
->[!NOTE] 
+> [!NOTE] 
 
 > cumulative value or sum, avg..
 
@@ -465,7 +465,7 @@ select customer_id, count(distinct(order_date)) as count from sales group by cus
 -- Using aggregate function as an argument of another aggregate function ?!
 ```
 
-[!NOTE]:
+> [!NOTE]:
 > `DISTINCT()` is not an aggregate functions but will returns the distinct of the input records.
 > `ORDER BY` We can use order by to dervive columns of aggregate functions by using the column name.
 
@@ -494,7 +494,7 @@ WHERE s.order_date = (
 GROUP BY s.customer_id, m.product_name
 ORDER BY s.customer_id;
 ```
-[!NOTE]:
+> [!NOTE]:
 > `ORDER BY & GROUP BY` In group by aggregation order by is used to order the result set not the grouped records.
 > We can use `MIN()` or `MAX()` functions to get the ordered data. Agg functions mostly deal with overall data without considering the order.
 > But `ARRAY_AGG` & `STRING_AGG` will helps
@@ -532,13 +532,62 @@ JOIN menu m ON p.product_id = m.product_id
 WHERE p.rnk = 1
 ORDER BY m.product_name;
 ```
-[!NOTE]:
+> [!NOTE]:
 > `GROUP BY` & `WINDOW` function together.
 > Group by aggregation will perform first and the result set is subjected to window function which is then ordered.
+> We can use order by on both resluts produced by window and group by, but to use agg column from group by in window we need to mention the same expressoion instead of the column name.
 
+```sql
+-- 5. Which item was the most popular for each customer?
+select customer_id, product_name, count from (select customer_id, product_id, count(*), DENSE_RANK() OVER(partition by customer_id order by count(*) desc) as rank from sales group b
+y customer_id, product_id) as ranked_sales natural join menu where rank = 1;
+```
 
+```sql
+-- 6. Which item was purchased first by the customer after they became a member?
+-- With WINDOW, best soln
+select customer_id, product_id, order_date from (select s.customer_id, product_id, order_date, DENSE_RANK() OVER(partition by s.customer_id order by order_date) as order_rank from s
+ales s join members m on s.customer_id = m.customer_id and s.order_date >= m.join_date) as ranked_sales where order_rank = 1;
 
+-- With GROUP BY
+select s.customer_id, product_id, order_date from (select s.customer_id, min(order_date) from sales as s inner join members m on s.customer_id = m.customer_id and s.order_date >= m.
+join_date group by s.customer_id) as g_sales left join sales as s on g_sales.customer_id = s.customer_id and g_sales.min = s.order_date;
+```
 
+```sql
+-- 7. Which item was purchased just before the customer became a member?
+
+select customer_id, order_date, m.product_name from (select customer_id, order_date, product_id from (select s.customer_id, s.order_date, s.product_id, DENSE_RANK() OVER(partition b
+y s.customer_id order by s.order_date desc) as order_time_rank from sales s join members m on s.customer_id = m.customer_id and s.order_date < m.join_date) as ranked_sales where ranked_sales
+.order_time_rank = 1) as final_sales join menu m on final_sales.product_id = m.product_id;
+```
+```
+-- 9. What is the total items and amount spent for each member before they became a member?
+-- 
+select s.customer_id, COUNT(*) as total_purchase, SUM(menu.price) as total_spent from sales s join members m on s.customer_id = m.customer_id and s.order_date < m.join_date join menu on s.product_id = menu.product_id group by s.customer_id;
+select s.customer_id, COUNT(*) as total_purchase, SUM(menu.price) as total_spent from sales as s, menu as mn, members as mm where s.customer_id = mm.customer_id and s.order_date < mm.join_date and s.product_id = mn.product_id grop by s.customer_id;
+```
+> [!NOTE]:
+> `Explicite, Implicite join & Where`
+> In PostgreSQL There is condition on joining and additional of them in where clause so the order of execution is determined by the planner itself with statitics it have.
+> In Implicite join the performance is similar as in Join and Where clause, but here we can mention all of them in a single Where clause. And it support Inner join
+
+```sql
+-- 9. If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
+select sales.customer_id, SUM((CASE WHEN menu.product_name = 'sushi' THEN price * 20 ELSE price * 10 END)) as total_points from sales left join menu on sales.product_id = menu.product_id group by sales.customer_id order by total_points;
+```
+
+```sql
+-- 10. In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi - how many points do customer A and B have at the end of January?
+
+select sales.customer_id, sum( CASE WHEN menu.product_name = 'sushi' THEN 20*menu.price  WHEN sales.order_date - members.join_date between 0 and 6 THEN 20*menu.price ELSE 10*menu.price END ) from sales inner join members on sales.customer_id =  members.customer_id inner join menu on sales.product_id = menu.product_id where sales.customer_id in ('A', 'B') and sales.order_date < DATE('2021-02-01') group by sales.customer_id;
+```
+
+> [NOTE]:
+> `DATE()` arg is 'yyyy-MM-dd'.
+> DATE() - DATE() is integer.
+> Usage of `BETWEEN`.
+> `CASE` with multiple conditions is also done in above query.
 
 
 
