@@ -542,11 +542,133 @@ ORDER BY m.product_name;
 
 
 
+### Functions & Stored Procedures
+
+Set 1 - Beginner Level
+
+```sql
+-- 1. Create a function that takes an employee_id as input and returns the full name of the employee.
+
+CREATE FUNCTION get_full_name(emp_id INT) 
+RETURNS TEXT
+AS
+$$
+BEGIN
+RETURN (select concat(first_name,' ', last_name) from employees where employee_id = emp_id);
+END;
+$$
+LANGUAGE plpgsql;
+```
+> [NOTE]:
+> `CONCAT` or `||` : It is used to concat multiple columns or values. Numerical field also could concatenate.
+
+```sql
+-- 2. Create a function that calculates the total salary expenditure of a given department.
+
+CREATE FUNCTION get_total_exp_of_department(dep TEXT)
+RETURNS NUMERIC
+AS
+$$
+BEGIN
+RETURN (select sum(e.salary) from employees e join departments d on e.department_id = d.department_id where d.department_name = dep);
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT get_total_exp_of_department('HR');
+```
+```sql
+-- 3. Write a stored procedure that inserts a new employee into the employees table, taking first name, last name, department ID, hire date, and salary as parameters.
+
+CREATE PROCEDURE insert_employee(
+    IN first_name VARCHAR,
+    IN last_name VARCHAR,
+    IN dept_id INT,
+    IN hire_date DATE,
+    IN salary NUMERIC
+)
+AS
+$$
+BEGIN
+    INSERT INTO employees (first_name, last_name, department_id, hire_date, salary)
+    VALUES (first_name, last_name, dept_id, hire_date, salary);
+END;
+$$
+LANGUAGE plpgsql;
+
+CALL insert_employee('akhi', 'vg', 1, '2025-03-01', 5000.00);
+```
+
+```sql
+-- 4. Write a stored procedure that updates an employee’s salary given their employee_id and the new salary amount.
+
+CREATE PROCEDURE update_salary(IN e_id INT, IN new_salary NUMERIC)
+AS
+$$
+BEGIN
+UPDATE employees SET salary = new_salary WHERE employee_id = e_id;
+INSERT INTO salaries(employee_id, salary_amount, effective_date) VALUES (e_id, new_salary, NOW());
+END;
+$$
+LANGUAGE plpgsql;
+
+CALL update_salary (1, 10.00);
+```
+> [NOTE]:
+> `NOW()`: Timestamp
+
+> `CURRENT_DATE`: Today Date.
+```sql
+-- 5. Create a function that returns the number of days an employee was present in a given month and year.
+
+CREATE FUNCTION count_present_days(emp_id INT, month INT, year INT) RETURNS INT AS $$
+BEGIN
+    RETURN (SELECT COUNT(*) FROM attendance
+            WHERE employee_id = emp_id
+            AND EXTRACT(MONTH FROM attendance_date) = month
+            AND EXTRACT(YEAR FROM attendance_date) = year
+            AND status = 'Present');
+END;
+$$ LANGUAGE plpgsql;
+
+```
 
 
 
+> [NOTE]:
+> `Functions` can have same name with different arg data type with different order. Return type doesn't matter.
+
+> Dropping a function `DROP FUNCTION func_name(data_types...);`
+> Listing all created functions.
+
+```sql
+SELECT routine_name
+FROM information_schema.routines
+WHERE routine_type = 'FUNCTION'
+AND specific_schema = 'public';
+```
+
+> `Procedures` uniquenes is based on name and arg data type in the same order.
+> It is invoked using `CALL`.
+> Listing current created procedure.
+
+```sql
+select pg_proc.proname from pg_proc join pg_namespace on pg_proc.pronamespace = pg_namespace.oid where pg_namespace.nspname = 'public' and pg_proc.prokind = 'p';
+```
 
 
+
+### Transaction Control Language (TCL)
+
+```sql
+--  is used to modify the behavior of a session by changing the schema search path, affecting how unqualified table names are resolved.
+SET search_path = my_schema
+```
+
+```sql
+-- Thus, while syntactically it belongs to DQL, its behavior is more like a Session or System Control Statement.
+SELECT pg_reload_conf();
+```
 
 ### PSQL
 
